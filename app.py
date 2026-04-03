@@ -1,124 +1,133 @@
-import csv, io, sqlite3
-import matplotlib.pyplot as plt
-from flask import Flask, jsonify, request, Response
-from src.Aceestver import (
-    get_program_by_code,
-    get_programs_summary,
-    calculate_calories,
-    init_db,
-    _DB_PATH,
-)
 
-def create_app(db_path=None):
+from flask import Flask, jsonify, render_template_string
+
+from src.Aceestver import get_program_by_code, get_programs_summary
+
+
+def create_app() -> Flask:
     app = Flask(__name__)
-    init_db(db_path)
 
-    # --- existing endpoints (health, programs, calories) ---
-
-    @app.post("/api/clients")
-    def add_client():
-        data = request.get_json() or {}
-        name, age, weight, program_code, adherence = (
-            data.get("name"),
-            data.get("age"),
-            data.get("weight_kg"),
-            data.get("program_code"),
-            data.get("adherence"),
+    @app.get("/")
+    def index() -> str:
+        programs = get_programs_summary()
+        return render_template_string(
+            """
+            <!doctype html>
+            <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>ACEest Fitness & Gym</title>
+                <style>
+                    :root {
+                        --bg: #0e1116;
+                        --panel: #171b22;
+                        --accent: #d4af37;
+                        --text: #f5f5f5;
+                        --muted: #a7acb8;
+                    }
+                    * { box-sizing: border-box; }
+                    body {
+                        margin: 0;
+                        font-family: Helvetica, Arial, sans-serif;
+                        background: radial-gradient(circle at top, #1f2630 0%, var(--bg) 60%);
+                        color: var(--text);
+                    }
+                    main {
+                        max-width: 1040px;
+                        margin: 0 auto;
+                        padding: 40px 20px 64px;
+                    }
+                    .hero {
+                        margin-bottom: 24px;
+                        padding: 24px;
+                        border: 1px solid rgba(212, 175, 55, 0.25);
+                        border-radius: 18px;
+                        background: rgba(23, 27, 34, 0.95);
+                    }
+                    .hero h1 {
+                        margin: 0 0 8px;
+                        color: var(--accent);
+                    }
+                    .hero p {
+                        margin: 0;
+                        color: var(--muted);
+                        line-height: 1.5;
+                    }
+                    .grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                        gap: 18px;
+                        margin-top: 24px;
+                    }
+                    .card {
+                        padding: 18px;
+                        border-radius: 16px;
+                        background: var(--panel);
+                        border-top: 4px solid var(--accent-color);
+                        box-shadow: 0 14px 35px rgba(0, 0, 0, 0.24);
+                    }
+                    .card h2 {
+                        margin: 0 0 8px;
+                        font-size: 1.1rem;
+                    }
+                    .badge {
+                        display: inline-block;
+                        margin-bottom: 12px;
+                        padding: 4px 10px;
+                        border-radius: 999px;
+                        background: rgba(255, 255, 255, 0.08);
+                        color: var(--muted);
+                        font-size: 0.85rem;
+                    }
+                    code {
+                        color: var(--accent);
+                    }
+                </style>
+            </head>
+            <body>
+                <main>
+                    <section class="hero">
+                        <h1>ACEest Fitness & Gym</h1>
+                        <p>
+                            Release 1.0 exposes the core training programs for Fat Loss, Muscle Gain,
+                            and Beginner onboarding. Use the API endpoints <code>/api/programs</code>
+                            and <code>/api/programs/&lt;code&gt;</code> for automation or integration.
+                        </p>
+                    </section>
+                    <section class="grid">
+                        {% for program in programs %}
+                        <article class="card" style="--accent-color: {{ program.color }};">
+                            <span class="badge">{{ program.code }}</span>
+                            <h2>{{ program.name }}</h2>
+                            <p>{{ program.summary }}</p>
+                        </article>
+                        {% endfor %}
+                    </section>
+                </main>
+            </body>
+            </html>
+            """,
+            programs=programs,
         )
-        if not all([name, age, weight, program_code, adherence]):
-            return jsonify({"error": "Missing fields"}), 400
-        if not get_program_by_code(program_code):
-            return jsonify({"error": "Program not found"}), 404
 
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO clients (name, age, weight_kg, program_code, adherence) VALUES (?, ?, ?, ?, ?)",
-            (name, age, weight, program_code, adherence),
-        )
-        conn.commit()
-        conn.close()
-        return jsonify(data), 201
+    @app.get("/health")
+    def health() -> tuple:
+        return jsonify({"service": "aceest-fitness", "status": "ok"}), 200
 
-    @app.get("/api/clients")
-    def list_clients():
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT name, age, weight_kg, program_code, adherence FROM clients")
-        rows = cur.fetchall()
-        conn.close()
-        clients = [
-            {"name": r[0], "age": r[1], "weight_kg": r[2], "program_code": r[3], "adherence": r[4]}
-            for r in rows
-        ]
-        return jsonify({"total": len(clients), "clients": clients}), 200
+    @app.get("/api/programs")
+    def list_programs() -> tuple:
+        return jsonify({"programs": get_programs_summary()}), 200
 
-    @app.get("/api/clients/export.csv")
-    def export_csv():
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT name, age, weight_kg, program_code, adherence FROM clients")
-        rows = cur.fetchall()
-        conn.close()
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["name", "age", "weight_kg", "program_code", "adherence"])
-        writer.writerows(rows)
-        return Response(output.getvalue(), mimetype="text/csv")
-
-    @app.get("/api/chart")
-    def chart():
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT name, adherence FROM clients")
-        rows = cur.fetchall()
-        conn.close()
-        if not rows:
-            return jsonify({"error": "No clients"}), 404
-
-        names = [r[0] for r in rows]
-        adherence = [r[1] for r in rows]
-
-        fig, ax = plt.subplots()
-        ax.bar(names, adherence)
-        ax.set_ylabel("Adherence %")
-        ax.set_title("Client Adherence Chart")
-
-        buf = io.BytesIO()
-        plt.savefig(buf, format="png")
-        buf.seek(0)
-        return Response(buf.getvalue(), mimetype="image/png")
-
-    @app.post("/api/progress")
-    def log_progress():
-        data = request.get_json() or {}
-        client_name, adherence, week = (
-            data.get("client_name"),
-            data.get("adherence"),
-            data.get("week"),
-        )
-        if not all([client_name, adherence, week]):
-            return jsonify({"error": "Missing fields"}), 400
-
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO progress (client_name, adherence, week) VALUES (?, ?, ?)",
-            (client_name, adherence, week),
-        )
-        conn.commit()
-        conn.close()
-        return jsonify(data), 201
-
-    @app.get("/api/progress/<client_name>")
-    def get_progress(client_name):
-        conn = sqlite3.connect(_DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT adherence, week FROM progress WHERE client_name=?", (client_name,))
-        rows = cur.fetchall()
-        conn.close()
-        sessions = [{"adherence": r[0], "week": r[1]} for r in rows]
-        return jsonify({"total": len(sessions), "sessions": sessions}), 200
+    @app.get("/api/programs/<program_code>")
+    def get_program(program_code: str) -> tuple:
+        program = get_program_by_code(program_code)
+        if program is None:
+            return jsonify({"error": f"Program '{program_code}' was not found."}), 404
+        return jsonify(program), 200
 
     return app
+
+
+if __name__ == "__main__":
+    create_app().run(host="0.0.0.0", port=5000, debug=False)
