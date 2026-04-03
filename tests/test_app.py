@@ -3,10 +3,14 @@ import os
 import tempfile
 
 import pytest
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 from app import create_app
 from src.Aceestver import (calculate_calories, get_program_by_code,
                             get_programs_summary, init_db)
+
 
 
 # ── business logic ────────────────────────────────────────────────────────────
