@@ -22,17 +22,25 @@ pipeline {
         }
 
         stage('Lint & Build Validation') {
+            agent {
+                docker { image 'python:3.11' }
+            }
             steps {
                 sh '''
-                    python3 -m compileall app.py src tests
+                    python -m compileall app.py src tests
+                    pip install ruff pytest
                     ruff check app.py src tests
                 '''
             }
         }
 
         stage('Unit Tests') {
+            agent {
+                docker { image 'python:3.11' }
+            }
             steps {
                 sh '''
+                    pip install -r requirements.txt
                     pytest --junitxml=pytest-report.xml
                 '''
             }
